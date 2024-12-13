@@ -1,33 +1,45 @@
-globals [explosion-radius alive-count]
-
+globals [explosion-radius alive-count radiation-radius radiation-deaths explosion-deaths]
 
 patches-own [building-intact] ;; Boolean voor gebouwenstatus
-turtles-own [is-alive escape-heading]        ;; Boolean voor levensstatus van mensen
+turtles-own [is-alive escape-heading death-cause]        ;; Boolean voor levensstatus van mensen
 
 to setup
   clear-all
   set explosion-radius 0
+  set radiation-radius 0
+  set max-radius max-radius
   setup-city
   setup-people
-  set alive-count count turtles with [is-alive] ;; Tel het aantal levende mensen
+  set alive-count count turtles with [is-alive]
+  set radiation-deaths 0
+  set explosion-deaths 0
   reset-ticks
 end
 
-
 to setup-city
-  ;; Maak een grid van gebouwen
+  clear-patches
   ask patches [
-    ifelse random 100 < 70 [
-      set building-intact true  ;; Stel gebouw in als intact
-      set pcolor gray          ;; Kleur intact gebouw
-    ] [
-      set building-intact false ;; Gebouw is niet intact
-      set pcolor green          ;; Kleur voor niet-bestaande gebouwen
+    ;; Straten: elk 5e rij of kolom
+    if (pxcor mod 10 = 0 or pycor mod 10 = 0) [
+      set pcolor gray  ;; Straat
+    ]
+    ;; Blokken tussen de straten
+    if (pxcor mod 10 != 0 and pycor mod 10 != 0) [
+      ;; Willekeurige inhoud van de blokken
+      let random-type random 100
+      if random-type < 70 [
+        set pcolor brown  ;; Gebouw
+        set building-intact true
+      ]
+      if random-type >= 70 and random-type < 85 [
+        set pcolor green  ;; Park
+      ]
+      if random-type >= 85 [
+        set pcolor black  ;; Lege ruimte
+      ]
     ]
   ]
 end
-
-
 
 to setup-people
   create-turtles people-amount [
@@ -35,22 +47,34 @@ to setup-people
     set is-alive true
     set color blue
     set escape-heading (towardsxy 0 0 + 180) ;; Vlucht-richting weg van epicentrum
+    set size 1
+    set shape "circle"
   ]
 end
 
 to go
-  if explosion-radius >= max-radius [stop]
+  if radiation-radius >= max-radius * 2 [stop] ;; Stop als de radiatie groot genoeg is
   expand-explosion
   check-damage
+  ask turtles [
+    let possible-moves neighbors with [pcolor = gray]  ;; Alleen grijze patches
+    if any? possible-moves [
+      move-to one-of possible-moves
+    ]
+  ]
   move-away-from-explosion
   tick
 end
 
 to expand-explosion
-  set explosion-radius explosion-radius + 1
+  set explosion-radius explosion-radius + 0.5
+  set radiation-radius radiation-radius + 0.75 ;; Radiatie breidt sneller uit
   ask patches [
     if distancexy 0 0 <= explosion-radius [
       set pcolor red ;; Explosiegebied
+    ]
+    if distancexy 0 0 > explosion-radius and distancexy 0 0 <= radiation-radius [
+      set pcolor green ;; Radiatiegebied
     ]
   ]
 end
@@ -58,42 +82,52 @@ end
 to check-damage
   ;; Schokgolf effect
   ask turtles [
-    if is-alive and (distancexy 0 0 <= explosion-radius) [
+    if is-alive and distancexy 0 0 <= explosion-radius [
       set is-alive false
-      set color orange ;; Turtle is dood
+      set color gray
+      set death-cause "explosion" ;; Sterft door explosie
+    ]
+    if is-alive and distancexy 0 0 > explosion-radius and distancexy 0 0 <= radiation-radius [
+      set color yellow ;; Turtle wordt ziek door radiatie
+      if random 100 < 5 [ ;; Kans van 5% per tick om te sterven aan radiatie
+        set is-alive false
+        set color yellow
+        set death-cause "radiation" ;; Sterft door radiatie
+      ]
     ]
   ]
-
   ;; Gebouwen beschadigen
   ask patches [
-    if building-intact and (pcolor = red) [
+    if (pcolor = brown and explosion-radius > 0) [
       set building-intact false
-      set pcolor black ;; Gebouw vernietigd
+      set pcolor black
     ]
   ]
 
   ;; Update de teller voor levende mensen
   set alive-count count turtles with [is-alive]
+  ;; Update de teller voor radiatiedoden
+  set radiation-deaths count turtles with [death-cause = "radiation"]
+  set explosion-deaths count turtles with [death-cause = "explosion"]
 end
 
 to move-away-from-explosion
   ask turtles with [is-alive] [
     set heading escape-heading ;; Stel de richting in op de vlucht-richting
-    fd 0.25                     ;; Beweeg langzaam in die richting
+    fd 0.1                     ;; Beweeg langzaam in die richting
   ]
 end
-
 
 
 @#$#@#$#@
 GRAPHICS-WINDOW
 210
 10
-720
-521
+719
+520
 -1
 -1
-2.5
+1.25
 1
 10
 1
@@ -103,10 +137,10 @@ GRAPHICS-WINDOW
 0
 0
 1
--100
-100
--100
-100
+-200
+200
+-200
+200
 0
 0
 1
@@ -204,6 +238,48 @@ people-amount
 1
 NIL
 HORIZONTAL
+
+MONITOR
+18
+268
+143
+313
+Deaths by raditation
+radiation-deaths
+17
+1
+11
+
+PLOT
+755
+54
+1260
+281
+Dodental & doden door radiatie
+Ticks
+Hoevelheid mensen
+0.0
+150.0
+0.0
+10000.0
+false
+false
+"" ""
+PENS
+"default" 1.0 0 -13840069 true "" "plot alive-count"
+"Pen-1" 1.0 0 -1184463 true "" "plot radiation-deaths"
+"pen-2" 1.0 0 -2674135 true "" "plot explosion-deaths"
+
+MONITOR
+22
+341
+147
+386
+Deaths by explosion
+explosion-deaths
+17
+1
+11
 
 @#$#@#$#@
 ## WHAT IS IT?
